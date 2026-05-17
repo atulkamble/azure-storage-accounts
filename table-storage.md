@@ -1,4 +1,5 @@
 ```
+// Theory 
 Azure Table storage 
 
 nosql key-value 
@@ -17,14 +18,23 @@ IOT
 logs 
 metadata - data of data 
 
+// Practical
+
+prerequisites: bash or wsl 
+
+az --version 
+az login 
+
+export AZURE_STORAGE_ACCOUNT=mystorageaccount997008
+export AZURE_STORAGE_KEY=M1ebYaxDaA6OSpg1Fg3IRGnrlBM+owg+P+/VmRW+vvvPvLwb8JPkjcz3E4ADpULnXQYHzBBSkmz8+AStYcYYEA==
+
+echo $AZURE_STORAGE_ACCOUNT
+echo $AZURE_STORAGE_KEY
+
 partition key RowKey  Name            Departments    Exp
 IT                  101         Atul               DevOps            5
 IT                   102        Ravi              Cloud               3
 HR                 201        Sneha           HR                   4
-
-
-export AZURE_STORAGE_ACCOUNT=mystorageaccount997008
-export AZURE_STORAGE_KEY=M1ebYaxDaA6OSpg1Fg3IRGnrlBM+owg+P+/VmRW+vvvPvLwb8JPkjcz3E4ADpULnXQYHzBBSkmz8+AStYcYYEA==
 
 az storage table create \
   --name employee \
@@ -53,7 +63,8 @@ az storage entity query \
   --table-name employee \
   --account-name $AZURE_STORAGE_ACCOUNT \
   --account-key $AZURE_STORAGE_KEY
-```# 🔑 Azure Storage Account Keys & Azure Table Storage
+```
+# 🔑 Azure Storage Account Keys & Azure Table Storage
 
 **Complete Beginner-Friendly Documentation**
 
