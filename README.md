@@ -1,3 +1,382 @@
+# Azure Storage (Core)
+
+| Topic                               | What to Cover                                                                              |
+| ----------------------------------- | ------------------------------------------------------------------------------------------ |
+| **Storage Account Overview**        | Storage account purpose, account types, endpoints, containers, file shares, queues, tables |
+| **Blob Storage (Hot/Cool/Archive)** | Containers, blobs, access tiers, upload/download, tier selection                           |
+| **Azure Files**                     | SMB/NFS file shares, mounting shares, shared storage use cases                             |
+| **Managed Disks**                   | OS disk, data disk, Standard HDD/SSD, Premium SSD, attaching disks to VMs                  |
+| **Access Keys & SAS**               | Storage account keys, connection strings, SAS tokens, permissions and expiry               |
+| **Lifecycle Management**            | Automatically move blobs between tiers or delete old data using rules                      |
+| **Data Redundancy Basics**          | LRS, ZRS, GRS, RA-GRS, GZRS, RA-GZRS                                                       |
+| **Storage Use Cases**               | Backups, static content, VM disks, shared files, logs, archives, application data          |
+
+## 1. Storage Account Overview
+
+An **Azure Storage Account** is the top-level Azure resource used to provide storage services.
+
+```text
+Storage Account
+│
+├── Blob Storage
+│   └── Containers → Blobs
+│
+├── Azure Files
+│   └── File Shares → Directories → Files
+│
+├── Queue Storage
+│
+└── Table Storage
+```
+
+Basic Azure CLI practice:
+
+```bash
+az login
+
+az group create \
+  --name storage-rg \
+  --location centralindia
+
+az storage account create \
+  --name mystorage12345 \
+  --resource-group storage-rg \
+  --location centralindia \
+  --sku Standard_LRS \
+  --kind StorageV2
+```
+
+Check the account:
+
+```bash
+az storage account show \
+  --name mystorage12345 \
+  --resource-group storage-rg
+```
+
+## 2. Blob Storage — Hot, Cool & Archive
+
+Blob Storage is **object storage** used for images, videos, documents, backups, logs and other unstructured data.
+
+```text
+Storage Account
+      │
+   Container
+      │
+ ┌────┼─────┐
+Blob Blob  Blob
+```
+
+Access tiers:
+
+| Tier        | Best For                   | Access               |
+| ----------- | -------------------------- | -------------------- |
+| **Hot**     | Frequently accessed data   | Fast/frequent        |
+| **Cool**    | Infrequently accessed data | Occasional           |
+| **Cold**    | Rarely accessed data       | Rare                 |
+| **Archive** | Long-term archival         | Requires rehydration |
+
+Create a container:
+
+```bash
+az storage container create \
+  --name images \
+  --account-name mystorage12345 \
+  --auth-mode login
+```
+
+Upload:
+
+```bash
+az storage blob upload \
+  --account-name mystorage12345 \
+  --container-name images \
+  --name logo.png \
+  --file logo.png \
+  --auth-mode login
+```
+
+List blobs:
+
+```bash
+az storage blob list \
+  --account-name mystorage12345 \
+  --container-name images \
+  --auth-mode login \
+  --output table
+```
+
+Change tier:
+
+```bash
+az storage blob set-tier \
+  --account-name mystorage12345 \
+  --container-name images \
+  --name logo.png \
+  --tier Cool \
+  --auth-mode login
+```
+
+## 3. Azure Files
+
+Azure Files provides managed **file shares** accessible using protocols such as SMB.
+
+```text
+Multiple Systems
+     │
+     ├──────────┐
+     ▼          ▼
+  Server 1   Server 2
+     │          │
+     └────┬─────┘
+          ▼
+     Azure Files
+       File Share
+```
+
+Create a share:
+
+```bash
+az storage share create \
+  --name sharedfiles \
+  --account-name mystorage12345
+```
+
+Typical use cases include shared application files, lift-and-shift applications, centralized file storage and replacing/on-extending traditional file servers.
+
+## 4. Managed Disks
+
+Managed Disks provide persistent block storage primarily for Azure VMs.
+
+```text
+Azure VM
+│
+├── OS Disk
+│
+└── Data Disk
+```
+
+Common disk choices include **Standard HDD**, **Standard SSD**, **Premium SSD** and **Ultra Disk**, depending on workload and supported VM/region configurations.
+
+Create a disk:
+
+```bash
+az disk create \
+  --resource-group storage-rg \
+  --name datadisk01 \
+  --size-gb 32 \
+  --sku Premium_LRS
+```
+
+Attach it:
+
+```bash
+az vm disk attach \
+  --resource-group storage-rg \
+  --vm-name myvm \
+  --name datadisk01
+```
+
+Then inside Linux:
+
+```bash
+lsblk
+sudo mkfs.xfs /dev/sdc
+sudo mkdir /data
+sudo mount /dev/sdc /data
+
+df -h
+```
+
+> Always verify the actual device name with `lsblk` before formatting.
+
+## 5. Access Keys & SAS
+
+### Access Keys
+
+Storage accounts provide account-level keys with broad access.
+
+```bash
+az storage account keys list \
+  --resource-group storage-rg \
+  --account-name mystorage12345
+```
+
+Because these keys are powerful credentials, avoid hardcoding them in application code.
+
+### SAS — Shared Access Signature
+
+SAS provides **delegated, restricted access**.
+
+You can control:
+
+```text
+SAS
+├── Resource
+├── Permissions
+│   ├── Read
+│   ├── Write
+│   ├── Delete
+│   └── List
+└── Expiration
+```
+
+Conceptually:
+
+```text
+Access Key
+   ↓
+Broad account access
+
+SAS Token
+   ↓
+Limited resource + permissions + time
+```
+
+For Azure-hosted applications, prefer **Microsoft Entra ID + managed identities/RBAC** where supported rather than distributing account keys.
+
+## 6. Lifecycle Management
+
+Lifecycle policies automate blob tiering and deletion.
+
+Example strategy:
+
+```text
+New Blob
+   │
+   ▼
+ HOT
+   │ 30 days
+   ▼
+ COOL
+   │ 90 days
+   ▼
+ COLD / ARCHIVE
+   │ 365 days
+   ▼
+ DELETE
+```
+
+Example policy:
+
+```json
+{
+  "rules": [
+    {
+      "enabled": true,
+      "name": "archive-old-data",
+      "type": "Lifecycle",
+      "definition": {
+        "actions": {
+          "baseBlob": {
+            "tierToCool": {
+              "daysAfterModificationGreaterThan": 30
+            },
+            "tierToArchive": {
+              "daysAfterModificationGreaterThan": 90
+            },
+            "delete": {
+              "daysAfterModificationGreaterThan": 365
+            }
+          }
+        },
+        "filters": {
+          "blobTypes": [
+            "blockBlob"
+          ]
+        }
+      }
+    }
+  ]
+}
+```
+
+Apply:
+
+```bash
+az storage account management-policy create \
+  --account-name mystorage12345 \
+  --resource-group storage-rg \
+  --policy policy.json
+```
+
+## 7. Data Redundancy Basics
+
+```text
+LRS
+Data → Copies within one datacenter/zone scope
+
+ZRS
+Data → Zone 1
+     → Zone 2
+     → Zone 3
+
+GRS
+Primary Region
+     │
+     └────────────► Secondary Region
+
+GZRS
+Zones in Primary Region
+     │
+     └────────────► Secondary Region
+```
+
+| Option      | Basic Idea                           |
+| ----------- | ------------------------------------ |
+| **LRS**     | Local redundancy                     |
+| **ZRS**     | Redundancy across availability zones |
+| **GRS**     | Geo-replication to secondary region  |
+| **RA-GRS**  | GRS + read access to secondary       |
+| **GZRS**    | Zone redundancy + geo-replication    |
+| **RA-GZRS** | GZRS + read access to secondary      |
+
+Easy way to remember:
+
+**L = Local → Z = Zones → G = Geographic region**
+
+## 8. Storage Use Cases
+
+| Requirement                     | Azure Storage Choice |
+| ------------------------------- | -------------------- |
+| Images/videos/documents         | **Blob Storage**     |
+| Static website content          | **Blob Storage**     |
+| Shared folders                  | **Azure Files**      |
+| VM OS/data storage              | **Managed Disks**    |
+| Long-term backup/archive        | **Blob Archive**     |
+| Application messages            | **Queue Storage**    |
+| NoSQL key/attribute data        | **Table Storage**    |
+| Frequently accessed objects     | **Hot tier**         |
+| Rarely accessed objects         | **Cool/Cold**        |
+| Long-term rarely retrieved data | **Archive**          |
+
+### Recommended hands-on sequence
+
+```text
+Create Resource Group
+        ↓
+Create Storage Account
+        ↓
+Create Blob Container
+        ↓
+Upload Blob
+        ↓
+Change Access Tier
+        ↓
+Create Azure File Share
+        ↓
+Practice SAS
+        ↓
+Configure Lifecycle Policy
+        ↓
+Compare LRS / ZRS / GRS
+        ↓
+Create & Attach Managed Disk
+```
+
+This gives students one continuous **Azure Storage Core lab** covering nearly every topic in your table.
+
+
 # 📦 Azure Storage Accounts: Full Setup with Codes
 
 ---
