@@ -1,5 +1,3 @@
-Below is a **training/lab-oriented Azure Storage guide** aligned with your syllabus, including points to remember, practical steps, Azure CLI commands, and an architecture diagram.
-
 ## 1. Azure Storage Account Overview
 
 An Azure Storage Account is the top-level Azure resource that provides access to multiple storage services.
