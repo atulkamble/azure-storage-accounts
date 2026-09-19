@@ -1,3 +1,714 @@
+Below is a **training/lab-oriented Azure Storage guide** aligned with your syllabus, including points to remember, practical steps, Azure CLI commands, and an architecture diagram.
+
+## 1. Azure Storage Account Overview
+
+An Azure Storage Account is the top-level Azure resource that provides access to multiple storage services.
+
+```text
+Azure Subscription
+       |
+Resource Group
+       |
+Storage Account
+       |
+       +-- Blob Storage
+       +-- Azure Files
+       +-- Queues
+       +-- Tables
+```
+
+Common storage account type:
+
+```text
+Standard general-purpose v2 (StorageV2)
+```
+
+Basic CLI setup:
+
+```bash
+az login
+
+az group create \
+  --name storage-rg \
+  --location centralindia
+
+az storage account create \
+  --name mystorage98600 \
+  --resource-group storage-rg \
+  --location centralindia \
+  --sku Standard_LRS \
+  --kind StorageV2
+```
+
+> Storage account names must be globally unique, lowercase, 3–24 characters, and contain only letters and numbers.
+
+---
+
+# Azure Storage (Core)
+
+## 2. Blob Storage
+
+Blob Storage is Azure's object-storage service and is commonly used for images, videos, backups, logs, documents, application artifacts, and other unstructured data.
+
+```text
+Storage Account
+       |
+    Container
+       |
+   +---+----------+
+   |              |
+image.jpg      backup.zip
+```
+
+### Access tiers
+
+| Tier    | Recommended use            |
+| ------- | -------------------------- |
+| Hot     | Frequently accessed data   |
+| Cool    | Infrequently accessed data |
+| Cold    | Rarely accessed data       |
+| Archive | Long-term archival         |
+
+Create a container:
+
+```bash
+az storage container create \
+  --name images \
+  --account-name mystorage98600 \
+  --auth-mode login
+```
+
+Upload:
+
+```bash
+echo "Hello Azure Storage" > demo.txt
+
+az storage blob upload \
+  --account-name mystorage98600 \
+  --container-name images \
+  --name demo.txt \
+  --file demo.txt \
+  --auth-mode login
+```
+
+List objects:
+
+```bash
+az storage blob list \
+  --account-name mystorage98600 \
+  --container-name images \
+  --auth-mode login \
+  --output table
+```
+
+Download:
+
+```bash
+az storage blob download \
+  --account-name mystorage98600 \
+  --container-name images \
+  --name demo.txt \
+  --file downloaded.txt \
+  --auth-mode login
+```
+
+---
+
+## 3. Azure Files
+
+Azure Files provides managed file shares using protocols such as SMB and NFS.
+
+Architecture:
+
+```text
+             Azure Storage Account
+                     |
+                Azure Files
+                     |
+                 File Share
+                     |
+          +----------+----------+
+          |                     |
+     Azure VM              On-Premises
+          |                     |
+         SMB                   SMB
+```
+
+Create a file share:
+
+```bash
+az storage share-rm create \
+  --resource-group storage-rg \
+  --storage-account mystorage98600 \
+  --name myshare \
+  --quota 10
+```
+
+Typical use cases include shared application files, lift-and-shift applications, centralized file shares, configuration files, and replacing traditional file servers.
+
+---
+
+## 4. Managed Disks
+
+Managed Disks provide persistent block storage primarily for Azure Virtual Machines.
+
+```text
+Azure VM
+   |
+   +-- OS Disk
+   |
+   +-- Data Disk
+```
+
+Common disk types include:
+
+| Disk           | Typical use                         |
+| -------------- | ----------------------------------- |
+| Standard HDD   | Low-cost workloads                  |
+| Standard SSD   | General workloads                   |
+| Premium SSD    | Production/performance workloads    |
+| Premium SSD v2 | High-performance workloads          |
+| Ultra Disk     | Very high IOPS/throughput workloads |
+
+Create a disk:
+
+```bash
+az disk create \
+  --resource-group storage-rg \
+  --name myDataDisk \
+  --size-gb 10 \
+  --sku StandardSSD_LRS
+```
+
+---
+
+## 5. Access Keys & SAS
+
+Storage accounts have access keys that provide broad access to storage resources.
+
+Display keys:
+
+```bash
+az storage account keys list \
+  --resource-group storage-rg \
+  --account-name mystorage98600 \
+  --output table
+```
+
+### SAS
+
+SAS stands for **Shared Access Signature**.
+
+It provides delegated and restricted access instead of simply sharing the storage account key.
+
+```text
+Client
+  |
+  | SAS Token
+  v
+Storage Account
+  |
+Container
+  |
+Blob
+```
+
+Example SAS:
+
+```bash
+EXPIRY=$(date -u -v+1d '+%Y-%m-%dT%H:%MZ')
+
+az storage blob generate-sas \
+  --account-name mystorage98600 \
+  --container-name images \
+  --name demo.txt \
+  --permissions r \
+  --expiry "$EXPIRY" \
+  --auth-mode login \
+  --as-user
+```
+
+**Points to remember:** Prefer Microsoft Entra ID and RBAC where possible. Avoid embedding account keys in application code, rotate keys when they must be used, and give SAS tokens only the permissions and lifetime required.
+
+---
+
+## 6. Lifecycle Management
+
+Lifecycle Management automatically moves or deletes blobs based on defined rules.
+
+Example:
+
+```text
+Upload
+  |
+  v
+ HOT
+  |
+  | 30 days
+  v
+ COOL
+  |
+  | 90 days
+  v
+ COLD / ARCHIVE
+  |
+  | 365 days
+  v
+DELETE
+```
+
+Example lifecycle policy:
+
+```json
+{
+  "rules": [
+    {
+      "enabled": true,
+      "name": "move-old-data",
+      "type": "Lifecycle",
+      "definition": {
+        "actions": {
+          "baseBlob": {
+            "tierToCool": {
+              "daysAfterModificationGreaterThan": 30
+            },
+            "tierToArchive": {
+              "daysAfterModificationGreaterThan": 90
+            },
+            "delete": {
+              "daysAfterModificationGreaterThan": 365
+            }
+          }
+        },
+        "filters": {
+          "blobTypes": [
+            "blockBlob"
+          ]
+        }
+      }
+    }
+  ]
+}
+```
+
+Apply:
+
+```bash
+az storage account management-policy create \
+  --account-name mystorage98600 \
+  --resource-group storage-rg \
+  --policy @policy.json
+```
+
+---
+
+# Data Redundancy Basics
+
+## 7. LRS, ZRS and GRS
+
+### LRS — Locally Redundant Storage
+
+Copies data within a single physical location in the primary region.
+
+```text
+Azure Region
+    |
+Datacenter
+    |
++---+---+---+
+|   |   |   |
+C1  C2  C3
+```
+
+Good for cost-sensitive workloads where zone-level protection isn't required.
+
+### ZRS — Zone-Redundant Storage
+
+Replicates data synchronously across availability zones in the primary region.
+
+```text
+Azure Region
+     |
++----+----+----+
+|         |    |
+AZ-1    AZ-2  AZ-3
+ |        |     |
+Copy    Copy   Copy
+```
+
+Useful when you need resilience against a zone failure.
+
+### GRS — Geo-Redundant Storage
+
+Replicates data to a secondary Azure region in addition to maintaining copies in the primary region.
+
+```text
+Primary Region
+      |
+     LRS
+      |
+      | Geo Replication
+      v
+Secondary Region
+      |
+     LRS
+```
+
+Useful for regional disaster-recovery scenarios.
+
+Change redundancy:
+
+```bash
+az storage account update \
+  --resource-group storage-rg \
+  --name mystorage98600 \
+  --sku Standard_ZRS
+```
+
+---
+
+# Storage Security & Advanced
+
+## 8. Private Endpoint for Storage
+
+A Private Endpoint gives a storage service a private IP address from your VNet.
+
+```text
+                     Azure
+                       |
+                Storage Account
+                       ^
+                       |
+               Private Endpoint
+                 10.0.1.x
+                       |
+              +--------+--------+
+              |                 |
+          Azure VM            App
+              |
+             VNet
+```
+
+High-level steps:
+
+```text
+1. Create Storage Account
+2. Create VNet
+3. Create Subnet
+4. Create Private Endpoint
+5. Select Storage sub-resource
+6. Configure Private DNS
+7. Restrict public network access
+8. Test from VM inside VNet
+```
+
+Example VNet:
+
+```bash
+az network vnet create \
+  --resource-group storage-rg \
+  --name storage-vnet \
+  --address-prefix 10.0.0.0/16 \
+  --subnet-name private-subnet \
+  --subnet-prefix 10.0.1.0/24
+```
+
+---
+
+## 9. Soft Delete & Versioning
+
+### Soft Delete
+
+Helps recover deleted blobs during a configured retention period.
+
+```text
+Blob
+ |
+DELETE
+ |
+ v
+Soft Deleted
+ |
+ | Retention Period
+ |
+ +---- Restore
+ |
+ +---- Permanent Deletion
+```
+
+Enable blob soft delete:
+
+```bash
+az storage account blob-service-properties update \
+  --resource-group storage-rg \
+  --account-name mystorage98600 \
+  --enable-delete-retention true \
+  --delete-retention-days 7
+```
+
+Enable versioning:
+
+```bash
+az storage account blob-service-properties update \
+  --resource-group storage-rg \
+  --account-name mystorage98600 \
+  --enable-versioning true
+```
+
+Versioning concept:
+
+```text
+report.pdf
+   |
+   +-- Version 1
+   +-- Version 2
+   +-- Version 3  <- Current
+```
+
+---
+
+# 10. Static Website Hosting
+
+Azure Blob Storage can host static HTML, CSS, JavaScript, and image content.
+
+Enable:
+
+```bash
+az storage blob service-properties update \
+  --account-name mystorage98600 \
+  --static-website \
+  --index-document index.html \
+  --404-document 404.html
+```
+
+Create a sample page:
+
+```bash
+cat > index.html <<'EOF'
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Azure Storage Website</title>
+</head>
+<body>
+    <h1>Hello from Azure Storage</h1>
+    <p>Static website hosted using Azure Blob Storage.</p>
+</body>
+</html>
+EOF
+```
+
+Upload:
+
+```bash
+az storage blob upload \
+  --account-name mystorage98600 \
+  --container-name '$web' \
+  --name index.html \
+  --file index.html \
+  --auth-mode login
+```
+
+Get website endpoint:
+
+```bash
+az storage account show \
+  --name mystorage98600 \
+  --resource-group storage-rg \
+  --query "primaryEndpoints.web" \
+  --output tsv
+```
+
+---
+
+# 11. Azure CDN
+
+CDN caches content closer to users.
+
+```text
+                    Users
+                      |
+                      v
+               CDN / Edge Cache
+                      |
+             Cache Miss Only
+                      |
+                      v
+              Storage Account
+                 Blob Data
+```
+
+Benefits include reduced latency, reduced load on the origin, caching of static assets, and better global content delivery.
+
+A common design is:
+
+```text
+User
+ |
+ v
+CDN / Front Door
+ |
+ v
+Azure Blob Storage
+ |
+ v
+Static Website
+```
+
+---
+
+# 12. Object Replication
+
+Object replication asynchronously copies block blobs between storage accounts.
+
+```text
+Storage Account A
+Primary Region
+     |
+     | Object Replication
+     v
+Storage Account B
+Secondary Region
+```
+
+Typical uses include disaster recovery, data distribution, data locality, and maintaining copies in different accounts/regions.
+
+Blob versioning is an important part of configuring object replication.
+
+---
+
+# 13. Storage Security Best Practices
+
+Use this security model:
+
+```text
+                    Application
+                         |
+                   Entra Identity
+                         |
+                        RBAC
+                         |
+                 Storage Account
+                  /           \
+        Private Endpoint     Encryption
+              |                  |
+             VNet              Data
+```
+
+Important practices:
+
+1. Prefer **Microsoft Entra ID + RBAC** over account keys.
+2. Use managed identities for Azure workloads.
+3. Use short-lived, least-privilege SAS tokens when SAS is necessary.
+4. Avoid exposing storage account keys in code or Git repositories.
+5. Use Private Endpoints for sensitive workloads.
+6. Restrict or disable unnecessary public network access.
+7. Enable soft delete where recovery is required.
+8. Enable versioning for important blob data where appropriate.
+9. Use lifecycle policies to control storage cost.
+10. Use Azure Monitor and diagnostic settings.
+11. Use encryption at rest; evaluate customer-managed keys where required.
+12. Apply least-privilege RBAC roles such as **Storage Blob Data Reader** or **Storage Blob Data Contributor** instead of broad administrative access.
+
+---
+
+# 14. Monitoring Storage
+
+Azure Monitor provides metrics, logs, alerts, and diagnostic capabilities for Storage.
+
+```text
+Storage Account
+      |
+      +---- Metrics
+      |
+      +---- Diagnostic Logs
+      |
+      v
+ Azure Monitor
+      |
+      +---- Log Analytics
+      +---- Alerts
+      +---- Dashboards
+```
+
+Useful metrics include:
+
+```text
+Transactions
+Availability
+Success E2E Latency
+Success Server Latency
+Ingress
+Egress
+Capacity
+```
+
+Basic account information:
+
+```bash
+az storage account show \
+  --resource-group storage-rg \
+  --name mystorage98600 \
+  --output table
+```
+
+For production environments, configure diagnostic settings to send relevant logs and metrics to destinations such as Log Analytics.
+
+---
+
+# Complete Architecture
+
+```text
+                         INTERNET USERS
+                               |
+                               v
+                      +-----------------+
+                      | CDN / Front Door|
+                      +--------+--------+
+                               |
+                               v
++----------------------------------------------------------------+
+|                     AZURE STORAGE ACCOUNT                       |
+|                                                                |
+|   +-------------+  +-------------+  +----------------------+   |
+|   | Blob Storage|  | Azure Files |  | Static Website       |   |
+|   |             |  |             |  | $web                 |   |
+|   | Hot         |  | SMB / NFS   |  +----------------------+   |
+|   | Cool        |  +-------------+                             |
+|   | Cold        |                                               |
+|   | Archive     |  Lifecycle / Versioning / Soft Delete         |
+|   +-------------+                                               |
+|                                                                |
+|             Encryption + Entra ID + RBAC + SAS                 |
++-------------------------------+--------------------------------+
+                                ^
+                                |
+                         Private Endpoint
+                                |
+                     +----------+----------+
+                     |                     |
+                 Azure VM             Application
+                     |                     |
+                     +----------+----------+
+                                |
+                               VNet
+
+                         Azure Monitor
+                              |
+                 +------------+------------+
+                 |                         |
+           Log Analytics                 Alerts
+```
+
+## Points to Remember
+
+**Storage Account → Service → Container/Share → Data** is the basic hierarchy to remember. Blob Storage is object storage, Azure Files is shared file storage, and Managed Disks provide block storage for VMs.
+
+For redundancy, remember **LRS = local**, **ZRS = zones**, and **GRS = geographic secondary region**. For security, prefer **Entra ID + RBAC + Managed Identity + Private Endpoint** rather than distributing storage account keys.
+
+For data protection, think **Soft Delete + Versioning + Replication**. For cost optimization, think **Hot → Cool/Cold → Archive → Delete** using lifecycle management. For visibility, use **Azure Monitor + diagnostic settings + Log Analytics + alerts**.
+
+
 # Azure Storage (Core)
 
 | Topic                               | What to Cover                                                                              |
