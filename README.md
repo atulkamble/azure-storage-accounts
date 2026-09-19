@@ -304,6 +304,61 @@ az storage account management-policy create \
 
 ## 7. LRS, ZRS and GRS
 
+For Azure Storage, **LRS, ZRS, and GRS differ mainly in where the copies are stored and the durability they provide**. Microsoft documents the following: ([Microsoft Learn][1])
+
+| Redundancy | Full Form                  |       Copies | Where Copies Are Stored                                           |                 Durability / Year |
+| ---------- | -------------------------- | -----------: | ----------------------------------------------------------------- | --------------------------------: |
+| **LRS**    | Locally Redundant Storage  | **3 copies** | Within a primary region, traditionally within a single datacenter |      **99.999999999%** — 11 nines |
+| **ZRS**    | Zone-Redundant Storage     | **3 copies** | Across **3 Availability Zones** in the same region                |     **99.9999999999%** — 12 nines |
+| **GRS**    | Geo-Redundant Storage      | **6 copies** | **3 copies primary region + 3 copies secondary region**           | **99.99999999999999%** — 16 nines |
+| **GZRS**   | Geo-Zone-Redundant Storage | **6 copies** | 3 across zones in primary + 3 in secondary region                 | **99.99999999999999%** — 16 nines |
+
+Microsoft explicitly describes LRS as three copies, ZRS as copies across three separate availability zones, and geo-redundant options as providing protection against regional outages. ([Microsoft Learn][2])
+
+### Easy way to remember
+
+```text
+LRS
+Primary Region
+└── Datacenter
+    ├── Copy 1
+    ├── Copy 2
+    └── Copy 3
+         = 3 Copies
+         = 11 nines durability
+
+
+ZRS
+Primary Region
+├── Availability Zone 1 → Copy
+├── Availability Zone 2 → Copy
+└── Availability Zone 3 → Copy
+         = 3 Copies
+         = 12 nines durability
+
+
+GRS
+Primary Region                  Secondary Region
+├── Copy 1                      ├── Copy 4
+├── Copy 2   ──Async Geo──►     ├── Copy 5
+└── Copy 3                      └── Copy 6
+
+         = 6 Copies
+         = 16 nines durability
+```
+
+### Important: Durability ≠ Availability
+
+The percentages above are **data durability**, not the normal storage SLA/availability percentage.
+
+For example, standard tiers generally have at least **99.9% read/write availability** for LRS, ZRS, GRS and GZRS, while **RA-GRS/RA-GZRS** can provide at least **99.99% read availability** because the secondary endpoint can also be read. ([Microsoft Learn][1])
+
+**Quick exam memory:** **LRS = 3 copies / local**, **ZRS = 3 copies / 3 zones**, **GRS = 6 copies / 2 regions**, **GZRS = 6 copies / zones + second region**.
+
+[1]: https://learn.microsoft.com/en-in/azure/storage/common/storage-redundancy?utm_source=chatgpt.com "Data redundancy - Azure Storage | Microsoft Learn"
+[2]: https://learn.microsoft.com/uk-ua/azure/storage/files/files-redundancy?utm_source=chatgpt.com "Data Redundancy in Azure Files | Microsoft Learn"
+
+
 ### LRS — Locally Redundant Storage
 
 Copies data within a single physical location in the primary region.
