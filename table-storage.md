@@ -1,4 +1,18 @@
 ```
+table name - employee 
+
+partition key RowKey  Name            Departments    Exp
+IT                  101         Atul               DevOps            5
+IT                   102        Ravi              Cloud               3
+HR                 201        Sneha           HR                   4
+
+PartitionKey eq 'IT' 
+PartitionKey eq 'HR' 
+
+az storage entity insert --table-name employee --entity PartitionKey=IT RowKey=103 Name=Bob Departments=Cloud Exp=7 --account-name mystorageaccount98600 --account-key HLNIU8YZYVaQ2aykCm9f4uMqRUmB/kNs2ICzG/e4c0Ok4wc/Y432CiXIpKGFpWg0l9OkOl2xw+fq+AStqOX//Q==
+
+```
+```
 // Theory 
 Azure Table storage 
 
